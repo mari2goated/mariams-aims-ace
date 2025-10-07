@@ -1,12 +1,14 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Check, Clock } from "lucide-react";
+import { Check, Clock, Edit, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useState } from "react";
+import { TimetableEditDialog } from "./TimetableEditDialog";
 
 interface TimetableCardProps {
+  timetableId: string;
   sessionId?: string;
   day: string;
   timeSlot: string;
@@ -17,6 +19,7 @@ interface TimetableCardProps {
 }
 
 export const TimetableCard = ({
+  timetableId,
   sessionId,
   day,
   timeSlot,
@@ -26,6 +29,7 @@ export const TimetableCard = ({
   onUpdate,
 }: TimetableCardProps) => {
   const [loading, setLoading] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   const handleCheckIn = async () => {
     setLoading(true);
@@ -97,8 +101,41 @@ export const TimetableCard = ({
     }
   };
 
+  const handleDelete = async () => {
+    if (!confirm("Are you sure you want to delete this session?")) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from("user_timetable")
+        .delete()
+        .eq("id", timetableId);
+
+      if (error) throw error;
+
+      toast.success("Session deleted! 🗑️");
+      onUpdate();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete session");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <Card
+    <>
+      <TimetableEditDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        onSuccess={onUpdate}
+        editData={{
+          id: timetableId,
+          day,
+          timeSlot,
+          focusArea,
+        }}
+      />
+      <Card
       className={`transition-all hover:shadow-lg ${
         isCompleted
           ? "border-primary bg-gradient-to-br from-primary/10 to-secondary/10"
@@ -109,12 +146,34 @@ export const TimetableCard = ({
     >
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
-          <div className="space-y-1">
+          <div className="space-y-1 flex-1">
             <Badge variant="outline" className="mb-2">
               {timeSlot}
             </Badge>
             <CardTitle className="text-lg">{focusArea}</CardTitle>
           </div>
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setEditDialogOpen(true)}
+              disabled={loading}
+            >
+              <Edit className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-destructive hover:text-destructive"
+              onClick={handleDelete}
+              disabled={loading}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        <div className="flex gap-2 mt-2">
           {isCompleted && (
             <div className="p-2 rounded-full bg-primary text-primary-foreground">
               <Check className="h-4 w-4" />
@@ -144,6 +203,7 @@ export const TimetableCard = ({
           </Button>
         )}
       </CardContent>
-    </Card>
+      </Card>
+    </>
   );
 };

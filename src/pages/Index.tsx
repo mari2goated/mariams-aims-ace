@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { TimetableCard } from "@/components/TimetableCard";
-import { Sparkles, LogOut } from "lucide-react";
+import { TimetableEditDialog } from "@/components/TimetableEditDialog";
+import { Sparkles, LogOut, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 interface StudySession {
@@ -15,21 +16,22 @@ interface StudySession {
   checked_in_at: string | null;
 }
 
-const TIMETABLE = [
-  { day: "Monday", sessions: [{ time: "8:30 am – 5:30 pm", focus: "University (long day)" }, { time: "8:30 – 9:15 pm", focus: "Light review (DBMS or Linear)" }] },
-  { day: "Tuesday", sessions: [{ time: "8:30 – 10:20 am", focus: "University" }, { time: "11:30 – 12:15 pm", focus: "Linear Algebra practice" }, { time: "12:30 – 1:15 pm", focus: "DBMS concepts/queries" }, { time: "2:45 – 5:30 pm", focus: "University" }, { time: "8:30 – 9:15 pm", focus: "DSA coding (1 problem)" }] },
-  { day: "Wednesday", sessions: [{ time: "8:30 – 9:30 am", focus: "University" }, { time: "10:30 – 11:15 am", focus: "DSA problem solving" }, { time: "11:30 – 12:15 pm", focus: "DSA problem solving" }, { time: "12:30 – 1:15 pm", focus: "Linear Algebra problem set" }, { time: "2:45 – 5:30 pm", focus: "University" }, { time: "8:30 – 9:00 pm", focus: "DBMS flashcards/summary" }] },
-  { day: "Thursday", sessions: [{ time: "10:20 am – 5:30 pm", focus: "University" }, { time: "8:00 – 8:45 pm", focus: "Light DSA (easy problem) OR Linear recap" }] },
-  { day: "Friday", sessions: [{ time: "12:00 – 1:30 pm", focus: "DSA coding (focus session)" }, { time: "4:00 – 5:00 pm", focus: "DBMS deep dive (queries, ER diagrams)" }] },
-  { day: "Saturday", sessions: [{ time: "11:00 – 12:30 pm", focus: "DSA focus session" }, { time: "3:00 – 6:00 pm", focus: "MERN Stack Course" }, { time: "6:30 – 7:00 pm", focus: "SE Principles / Business Writing" }] },
-  { day: "Sunday", sessions: [{ time: "11:00 – 12:30 pm", focus: "Linear Algebra problem-solving" }, { time: "3:00 – 6:00 pm", focus: "MERN Stack Course" }, { time: "6:30 – 7:00 pm", focus: "Technical Business Writing" }] },
-];
+interface TimetableSession {
+  id: string;
+  day: string;
+  time_slot: string;
+  focus_area: string;
+}
+
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 const Index = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<any>(null);
   const [sessions, setSessions] = useState<StudySession[]>([]);
+  const [timetable, setTimetable] = useState<TimetableSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
 
   useEffect(() => {
     // Check authentication
@@ -54,6 +56,20 @@ const Index = () => {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
+  const fetchTimetable = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("user_timetable")
+        .select("*")
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+      setTimetable(data || []);
+    } catch (error: any) {
+      console.error("Error fetching timetable:", error);
+    }
+  };
+
   const fetchSessions = async () => {
     try {
       const { data, error } = await supabase
@@ -70,9 +86,14 @@ const Index = () => {
     }
   };
 
+  const fetchAll = () => {
+    fetchTimetable();
+    fetchSessions();
+  };
+
   useEffect(() => {
     if (user) {
-      fetchSessions();
+      fetchAll();
     }
   }, [user]);
 
@@ -86,11 +107,22 @@ const Index = () => {
     }
   };
 
-  const getSessionForSlot = (day: string, timeSlot: string, focusArea: string) => {
+  const getSessionForSlot = (timetableId: string) => {
+    const timetableEntry = timetable.find((t) => t.id === timetableId);
+    if (!timetableEntry) return null;
+
     return sessions.find(
-      (s) => s.day === day && s.time_slot === timeSlot && s.focus_area === focusArea
+      (s) =>
+        s.day === timetableEntry.day &&
+        s.time_slot === timetableEntry.time_slot &&
+        s.focus_area === timetableEntry.focus_area
     );
   };
+
+  const groupedTimetable = DAYS.map((day) => ({
+    day,
+    sessions: timetable.filter((t) => t.day === day),
+  })).filter((dayGroup) => dayGroup.sessions.length > 0);
 
   if (loading) {
     return (
@@ -118,40 +150,59 @@ const Index = () => {
               <p className="text-sm text-muted-foreground">Your path to academic excellence ✨</p>
             </div>
           </div>
-          <Button onClick={handleLogout} variant="outline" size="sm">
-            <LogOut className="h-4 w-4 mr-2" />
-            Logout
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => setAddDialogOpen(true)} size="sm">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Session
+            </Button>
+            <Button onClick={handleLogout} variant="outline" size="sm">
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
+            </Button>
+          </div>
         </div>
 
-        <div className="space-y-8">
-          {TIMETABLE.map((daySchedule) => (
-            <div key={daySchedule.day} className="space-y-4">
-              <h2 className="text-2xl font-bold text-foreground">{daySchedule.day}</h2>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {daySchedule.sessions.map((session, idx) => {
-                  const existingSession = getSessionForSlot(
-                    daySchedule.day,
-                    session.time,
-                    session.focus
-                  );
-                  return (
-                    <TimetableCard
-                      key={`${daySchedule.day}-${idx}`}
-                      sessionId={existingSession?.id}
-                      day={daySchedule.day}
-                      timeSlot={session.time}
-                      focusArea={session.focus}
-                      isCompleted={existingSession?.is_completed || false}
-                      checkedInAt={existingSession?.checked_in_at}
-                      onUpdate={fetchSessions}
-                    />
-                  );
-                })}
+        {groupedTimetable.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground mb-4">No sessions in your timetable yet.</p>
+            <Button onClick={() => setAddDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Your First Session
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {groupedTimetable.map((daySchedule) => (
+              <div key={daySchedule.day} className="space-y-4">
+                <h2 className="text-2xl font-bold text-foreground">{daySchedule.day}</h2>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {daySchedule.sessions.map((timetableEntry) => {
+                    const existingSession = getSessionForSlot(timetableEntry.id);
+                    return (
+                      <TimetableCard
+                        key={timetableEntry.id}
+                        timetableId={timetableEntry.id}
+                        sessionId={existingSession?.id}
+                        day={timetableEntry.day}
+                        timeSlot={timetableEntry.time_slot}
+                        focusArea={timetableEntry.focus_area}
+                        isCompleted={existingSession?.is_completed || false}
+                        checkedInAt={existingSession?.checked_in_at}
+                        onUpdate={fetchAll}
+                      />
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
+
+        <TimetableEditDialog
+          open={addDialogOpen}
+          onOpenChange={setAddDialogOpen}
+          onSuccess={fetchAll}
+        />
       </div>
     </div>
   );
